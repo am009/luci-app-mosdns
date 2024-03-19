@@ -1,0 +1,107 @@
+From 4f90490dc7c56c94880f09b5bf2542ac65d97530 Mon Sep 17 00:00:00 2001
+From: am009 <634960348@qq.com>
+Date: Mon, 18 Mar 2024 14:38:32 +0000
+Subject: [PATCH] nftset: print log instead of returning error.
+
+---
+ plugin/executable/nftset/nftset.go       |  7 ++++---
+ plugin/executable/nftset/nftset_linux.go | 11 +++++++++--
+ plugin/executable/nftset/nftset_other.go |  4 +++-
+ 3 files changed, 16 insertions(+), 6 deletions(-)
+
+diff --git a/plugin/executable/nftset/nftset.go b/plugin/executable/nftset/nftset.go
+index e1aa58a66..1e41cfbf7 100644
+--- a/plugin/executable/nftset/nftset.go
++++ b/plugin/executable/nftset/nftset.go
+@@ -21,9 +21,10 @@ package nftset
+ 
+ import (
+ 	"fmt"
+-	"github.com/IrineSistiana/mosdns/v5/plugin/executable/sequence"
+ 	"strconv"
+ 	"strings"
++
++	"github.com/IrineSistiana/mosdns/v5/plugin/executable/sequence"
+ )
+ 
+ const PluginType = "nftset"
+@@ -48,7 +49,7 @@ type SetArgs struct {
+ 
+ // QuickSetup format: [{ip|ip6|inet},table_name,set_name,{ipv4_addr|ipv6_addr},mask] *2 (can repeat once)
+ // e.g. "inet,my_table,my_set,ipv4_addr,24 inet,my_table,my_set,ipv6_addr,48"
+-func QuickSetup(_ sequence.BQ, s string) (any, error) {
++func QuickSetup(bq sequence.BQ, s string) (any, error) {
+ 	fs := strings.Fields(s)
+ 	if len(fs) > 2 {
+ 		return nil, fmt.Errorf("expect no more than 2 fields, got %d", len(fs))
+@@ -80,5 +81,5 @@ func QuickSetup(_ sequence.BQ, s string) (any, error) {
+ 			return nil, fmt.Errorf("invalid ip type, %s", ss[0])
+ 		}
+ 	}
+-	return newNftSetPlugin(args)
++	return newNftSetPlugin(bq.L(), args)
+ }
+diff --git a/plugin/executable/nftset/nftset_linux.go b/plugin/executable/nftset/nftset_linux.go
+index 0fc1c8e40..608be7333 100644
+--- a/plugin/executable/nftset/nftset_linux.go
++++ b/plugin/executable/nftset/nftset_linux.go
+@@ -31,15 +31,17 @@ import (
+ 	"github.com/IrineSistiana/mosdns/v5/pkg/utils"
+ 	"github.com/google/nftables"
+ 	"github.com/miekg/dns"
++	"go.uber.org/zap"
+ )
+ 
+ type nftSetPlugin struct {
++	l         *zap.Logger
+ 	args      *Args
+ 	v4Handler *nftset_utils.NftSetHandler
+ 	v6Handler *nftset_utils.NftSetHandler
+ }
+ 
+-func newNftSetPlugin(args *Args) (*nftSetPlugin, error) {
++func newNftSetPlugin(l *zap.Logger, args *Args) (*nftSetPlugin, error) {
+ 	utils.SetDefaultUnsignNum(&args.IPv4.Mask, 24)
+ 	utils.SetDefaultUnsignNum(&args.IPv6.Mask, 48)
+ 	if m := args.IPv4.Mask; m > 32 {
+@@ -50,6 +52,7 @@ func newNftSetPlugin(args *Args) (*nftSetPlugin, error) {
+ 	}
+ 
+ 	p := &nftSetPlugin{
++		l:    l,
+ 		args: args,
+ 	}
+ 
+@@ -84,7 +87,11 @@ func (p *nftSetPlugin) Exec(_ context.Context, qCtx *query_context.Context) erro
+ 	r := qCtx.R()
+ 	if r != nil {
+ 		if err := p.addElems(r); err != nil {
+-			return fmt.Errorf("nftable: %w", err)
++			p.l.Info(
++				fmt.Errorf("nftable: %w", err).Error(),
++				zap.Inline(qCtx),
++			)
++			return nil
+ 		}
+ 	}
+ 	return nil
+diff --git a/plugin/executable/nftset/nftset_other.go b/plugin/executable/nftset/nftset_other.go
+index c7f870d49..104603b67 100644
+--- a/plugin/executable/nftset/nftset_other.go
++++ b/plugin/executable/nftset/nftset_other.go
+@@ -24,12 +24,14 @@ package nftset
+ 
+ import (
+ 	"context"
++
+ 	"github.com/IrineSistiana/mosdns/v5/pkg/query_context"
++	"go.uber.org/zap"
+ )
+ 
+ type nftSetPlugin struct{}
+ 
+-func newNftSetPlugin(args *Args) (*nftSetPlugin, error) {
++func newNftSetPlugin(l *zap.Logger, args *Args) (*nftSetPlugin, error) {
+ 	return &nftSetPlugin{}, nil
+ }
+ 
