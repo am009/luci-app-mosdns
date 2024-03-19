@@ -2,6 +2,20 @@
 
 [MosDNS](https://github.com/IrineSistiana/mosdns) is a plug-in DNS forwarder. Users can splicing plug-ins as needed to customize their own DNS processing logic.
 
+## How to add new patches
+
+https://openwrt.org/docs/guide-developer/toolchain/use-patches-with-buildsystem
+
+```
+make package/mosdns/mosdns/{clean,prepare} V=s QUILT=1
+cd build_dir/target-x86_64_musl/mosdns-5.3.1/
+quilt series
+wget https://github.com/am009/mosdns/commit/4f90490dc7c56c94880f09b5bf2542ac65d97530.patch -O /tmp/206-nftset-noerror.patch
+quilt import /tmp/206-nftset-noerror.patch
+make package/mosdns/mosdns/update V=s
+make package/mosdns/mosdns/{clean,compile} package/index V=s
+```
+
 ## DNS protocol standard
 
 **General DNS (UDP):** `119.29.29.29` **&** `udp://119.29.29.29:53`
